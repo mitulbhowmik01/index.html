@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Coin Mini App</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- ===== THEME (FROM YOUR GIVEN HTML DESIGN) ===== -->
+<style>
+:root{
+  --primary:#667eea;
+  --secondary:#764ba2;
+  --accent:#f59e0b;
+  --accent-dark:#d97706;
+  --bg:linear-gradient(135deg,#667eea,#764ba2);
+  --card:#ffffff;
+  --dark:#111827;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+
+body{
+  background:var(--bg);
+  min-height:100vh;
+  padding-bottom:80px;
+}
+
+.header{
+  padding:16px;
+  color:#fff;
+  font-size:20px;
+  text-align:center;
+  font-weight:700;
+}
+
+.page{display:none;padding:16px}
+.page.active{display:block}
+
+.card{
+  background:var(--card);
+  border-radius:20px;
+  padding:16px;
+  margin-bottom:16px;
+  box-shadow:0 10px 40px rgba(0,0,0,.3)
+}
+
+.coin{
+  font-size:36px;
+  font-weight:800;
+  background:linear-gradient(135deg,var(--accent),var(--accent-dark));
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+
+.btn{
+  width:100%;
+  padding:14px;
+  border-radius:14px;
+  border:none;
+  background:var(--bg);
+  color:#fff;
+  font-weight:700;
+  margin-top:10px;
+  cursor:pointer;
+  transition:.2s;
+}
+.btn:active{transform:scale(.96)}
+
+.nav{
+  position:fixed;
+  bottom:0;left:0;right:0;
+  display:flex;
+  background:#fff;
+  box-shadow:0 -4px 20px rgba(0,0,0,.2)
+}
+.nav button{
+  flex:1;
+  padding:10px;
+  border:none;
+  background:none;
+  font-size:12px;
+  color:#6b7280;
+}
+.nav button.active{color:var(--primary);font-weight:700}
+
+input{
+  width:100%;
+  padding:12px;
+  border-radius:12px;
+  border:2px solid #e0e7ff
+}
+</style>
+</head>
+
+<body>
+
+<div class="header">Coin Mini App</div>
+
+<!-- HOME -->
+<div id="home" class="page active">
+  <div class="card">
+    <div>Total Coins</div>
+    <div class="coin" id="coinBox">0</div>
+  </div>
+
+  <div class="card">
+    <button class="btn" onclick="playGame()">🎮 Play & Earn</button>
+  </div>
+
+  <div class="card">
+    <input id="redeemInput" placeholder="Enter Redeem Code">
+    <button class="btn" onclick="redeemCode()">Redeem Code</button>
+  </div>
+</div>
+
+<!-- WALLET -->
+<div id="wallet" class="page">
+  <div class="card">
+    <h3>Wallet</h3>
+    <p>Coins: <b id="walletCoins">0</b></p>
+  </div>
+</div>
+
+<!-- PROFILE -->
+<div id="profile" class="page">
+  <div class="card">
+    <p>Name: <b id="pName">-</b></p>
+    <p>ID: <b id="pId">-</b></p>
+    <p>Referral: <b id="pRef">-</b></p>
+  </div>
+</div>
+
+<!-- LEADERBOARD -->
+<div id="leader" class="page">
+  <div class="card">
+    <h3>Leaderboard</h3>
+    <div id="leaderList"></div>
+  </div>
+</div>
+
+<!-- DAILY -->
+<div id="daily" class="page">
+  <div class="card">
+    <h3>Daily Reward</h3>
+    <button class="btn" onclick="dailyReward()">🎁 Claim</button>
+  </div>
+</div>
+
+<!-- NAV -->
+<div class="nav">
+  <button class="active" onclick="openPage('home',this)">Home</button>
+  <button onclick="openPage('wallet',this)">Wallet</button>
+  <button onclick="openPage('profile',this)">Profile</button>
+  <button onclick="openPage('leader',this)">Top</button>
+  <button onclick="openPage('daily',this)">Daily</button>
+</div>
+
+<!-- ===== LOGIC ===== -->
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+const SUPABASE_URL = "https://cbcxteuujmcourighryc.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNiY3h0ZXV1am1jb3VyaWdocnljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4MDc0NzIsImV4cCI6MjA4MTM4MzQ3Mn0.iHYKilUnnudmdiVSETD7geyIFo2G5tcGF_PYPnxV7js";
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const tg = window.Telegram.WebApp;
+tg.ready(); tg.expand();
+const user = tg.initDataUnsafe.user;
+
+let coins = 0;
+
+// INIT
+await initUser();
+await loadLeaderboard();
+
+async function initUser(){
+  document.getElementById("pName").textContent = user.first_name;
+  document.getElementById("pId").textContent = user.id;
+
+  let { data } = await supabase
+    .from("users")
+    .select("*")
+    .eq("telegram_id", user.id)
+    .single();
+
+  if(!data){
+    await supabase.from("users").insert({
+      telegram_id:user.id,
+      username:user.username,
+      total_coins:0
+    });
+    coins = 0;
+  } else {
+    coins = data.total_coins;
+  }
+  updateCoins();
+}
+
+function updateCoins(){
+  coinBox.textContent = coins;
+  walletCoins.textContent = coins;
+}
+
+// GAME
+window.playGame = async ()=>{
+  const earn = Math.floor(Math.random()*11)+5;
+  coins += earn;
+
+  await supabase.from("users")
+    .update({ total_coins: coins })
+    .eq("telegram_id", user.id);
+
+  updateCoins();
+  alert("You earned "+earn+" coins!");
+}
+
+// DAILY
+window.dailyReward = async ()=>{
+  const today = new Date().toISOString().slice(0,10);
+
+  const { data } = await supabase
+    .from("daily_logs")
+    .select("*")
+    .eq("telegram_id", user.id)
+    .eq("claim_date", today)
+    .single();
+
+  if(data){ alert("Already claimed"); return; }
+
+  await supabase.from("daily_logs").insert({
+    telegram_id:user.id,
+    claim_date:today
+  });
+
+  coins += 10;
+  await supabase.from("users")
+    .update({ total_coins: coins })
+    .eq("telegram_id", user.id);
+
+  updateCoins();
+  alert("Daily reward +10");
+}
+
+// LEADERBOARD
+async function loadLeaderboard(){
+  const { data } = await supabase
+    .from("users")
+    .select("username,total_coins")
+    .order("total_coins",{ascending:false})
+    .limit(10);
+
+  leaderList.innerHTML="";
+  data.forEach((u,i)=>{
+    leaderList.innerHTML += `<p>${i+1}. ${u.username} - ${u.total_coins}</p>`;
+  });
+}
+
+// REDEEM CODE (simple demo)
+window.redeemCode = async ()=>{
+  alert("Redeem system active (admin controlled)");
+}
+
+// NAV
+window.openPage = (id,btn)=>{
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+</script>
+</body>
+</html>
